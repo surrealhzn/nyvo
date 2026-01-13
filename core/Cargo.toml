@@ -1,0 +1,14 @@
+[package]
+name = "nyvo-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "0.4.42"
+nt-time = { version = "0.13.0", features = ["chrono"] }
+zip = { version = "7.0.0", features = ["chrono", "nt-time"] }
+
+[features]
+default = []
+zip = []
+nyvo = []
