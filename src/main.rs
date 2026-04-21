@@ -1,40 +1,37 @@
-use gpui::*;
-use gpui_component::*;
-use gpui_platform::application;
+use clap::{Parser, Subcommand};
+use std::process;
 
-mod assets;
-mod views;
+#[cfg(feature = "gui")]
+mod gui;
+
+#[derive(Parser, Debug)]
+#[command(version, long_version = None, about, long_about = None, name = "Surreal Nyvo")]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    #[cfg(feature = "gui")]
+    /// Launch the GUI application
+    Gui { path: Option<String> },
+}
 
 fn main() {
-    let app = application().with_assets(assets::Assets);
+    let cli = Cli::parse();
 
-    app.run(move |cx| {
-        gpui_component::init(cx);
+    match cli.command {
+        #[cfg(feature = "gui")]
+        Some(Commands::Gui { .. }) => {
+            gui::launch();
+        }
+        None => {
+            println!("No command provided. Use --help for more information.");
 
-        cx.spawn(async move |cx| {
-            cx.update(views::Navigation::init);
-            cx.open_window(
-                WindowOptions {
-                    titlebar: Some(TitlebarOptions {
-                        title: Some("Nyvo".into()),
-                        ..Default::default()
-                    }),
-                    app_id: Some("com.surrealhorizon.nyvo".into()),
-                    ..Default::default()
-                },
-                |window, cx| {
-                    cx.text_system()
-                        .add_fonts(vec![
-                            include_bytes!("../assets/fonts/Inter_24pt-Regular.ttf").into(),
-                            include_bytes!("../assets/fonts/Inter_24pt-Bold.ttf").into(),
-                        ])
-                        .expect("failed to load fonts");
-                    let view = cx.new(views::Interface::new);
-                    cx.new(|cx| Root::new(view, window, cx).font_family("Inter 24pt"))
-                },
-            )
-            .expect("Failed to open window");
-        })
-        .detach();
-    });
+            #[cfg(feature = "gui")]
+            println!("\nTo launch the GUI, use the `gui` subcommand instead:\nnyvo gui");
+            process::exit(1);
+        }
+    }
 }

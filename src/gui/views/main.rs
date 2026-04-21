@@ -1,7 +1,7 @@
 use gpui::*;
 use gpui_component::{button::*, *};
 
-use crate::views::{Navigation, SettingsView};
+use super::{Navigation, SettingsView};
 
 pub struct MainView;
 impl Render for MainView {
