@@ -3,12 +3,18 @@ name = "nyvo-core"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-chrono = "0.4.42"
-nt-time = { version = "0.13.0", features = ["chrono"] }
-zip = { version = "7.0.0", features = ["chrono", "nt-time"] }
-
 [features]
 default = []
-zip = []
+zip = ["dep:zip", "dep:nt-time"]
 nyvo = []
+
+
+[dependencies]
+chrono = "0.4.44"
+dh = "0.10.0"
+nt-time = { version = "0.15.0", features = ["chrono"], optional = true }
+thiserror = "2.0.18"
+zip = { version = "8.5.1", default-features = false, features = [
+  "chrono",
+  "nt-time",
+], optional = true }
