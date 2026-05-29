@@ -83,11 +83,6 @@ impl<'a> ArchiveFormat<'a> for ZipFormat<'a> {
             .get(block)
             .ok_or(Err::NotFoundInArchive(format!("#blk-{:x}", block)))?;
 
-        dbg!(
-            self.source
-                .read_vec_at(block.offset as usize, block.size as usize)?
-        );
-
         super::extract(
             &mut self.source,
             block.offset,
