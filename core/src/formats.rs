@@ -1,11 +1,8 @@
-use std::{
-    io::{Read, Write},
-    path::PathBuf,
-};
+use std::{io::Write, path::PathBuf};
 
-use dh::{ReadSeek, ReadValAt};
+use dh::ReadValAt;
 
-use crate::{Res, env::Env};
+use crate::{Res, Rs, env::Env};
 
 #[cfg(feature = "nyvo")]
 pub mod nyvo;
@@ -42,7 +39,7 @@ pub struct IndexItem {
 pub type Index = Vec<IndexItem>;
 
 pub trait ArchiveFormat<'a> {
-    fn new(env: Env, source: &'a mut dyn dh::ReadSeek) -> Self;
+    fn new(env: Env, source: &'a mut dyn Rs) -> Self;
     fn get_type(&self) -> ArchiveFormatType;
 
     fn compression_methods(&self) -> Vec<CompressionMethod> {
@@ -61,7 +58,7 @@ pub trait ArchiveFormat<'a> {
     fn extract_file(
         &self,
         file: usize,
-        block: &mut dyn ReadSeek,
+        block: &mut dyn Rs,
         target: &mut dyn std::io::Write,
     ) -> Res<()>;
 }
@@ -73,24 +70,60 @@ pub struct EncryptionMethod {
     pub key: Vec<u8>,
 }
 
-pub enum CompressionAlgorithm {}
+#[derive(Debug)]
+pub enum CompressionAlgorithm {
+    Unknown,
+    Deflate,
+}
 
+#[derive(Debug)]
 pub struct CompressionMethod {
     pub algorithm: CompressionAlgorithm,
     pub level: Option<u8>,
 }
 
+impl<'a> CompressionMethod {
+    pub fn unknown() -> Self {
+        Self {
+            algorithm: CompressionAlgorithm::Unknown,
+            level: None,
+        }
+    }
+
+    pub fn unknown_ref() -> &'a Self {
+        &Self {
+            algorithm: CompressionAlgorithm::Unknown,
+            level: None,
+        }
+    }
+}
+
 pub fn extract(
-    mut source: &mut dyn ReadSeek,
+    mut source: &mut dyn Rs,
     offset: u64,
     size: u64,
     target: &mut dyn Write,
-    encryption: Option<EncryptionMethod>,
-    compression: Option<CompressionMethod>,
+    encryption: Option<&EncryptionMethod>,
+    compression: Option<&CompressionMethod>,
 ) -> Res<()> {
-    if encryption.is_some() || compression.is_some() {
+    if encryption.is_some() {
         todo!();
     }
-    source.copy_chunked_at(offset as usize, size as usize, target, 65536)?;
+
+    if let Some(compression) = compression {
+        match compression.algorithm {
+            #[cfg(feature = "deflate")]
+            CompressionAlgorithm::Deflate => {
+                use dh::ReadVal;
+                use flate2::read::DeflateDecoder;
+                let mut decoder = DeflateDecoder::new(source);
+                decoder.copy(size, target)?;
+                return Ok(());
+            }
+            _ => todo!(),
+        }
+    }
+
+    source.copy_at(offset, size, target)?;
     Ok(())
 }

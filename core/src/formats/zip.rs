@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use dh::{ReadSeek, ReadValAt};
-use zip::ZipArchive;
+use dh::ReadValAt;
+use zip::{CompressionMethod, ZipArchive};
 
 use crate::{
-    Err, Res,
+    Err, Res, Rs,
     env::Env,
     formats::{Blocks, IndexItem},
     unwrap_return_ref,
@@ -17,19 +17,21 @@ pub use super::{
 };
 
 pub struct ZipFormat<'a> {
-    source: &'a mut dyn ReadSeek,
+    source: &'a mut dyn Rs,
     keys: Vec<Vec<u8>>,
     index: Option<Index>,
     blocks: Option<Blocks>,
+    compression_methods: Vec<super::CompressionMethod>,
 }
 
 impl<'a> ArchiveFormat<'a> for ZipFormat<'a> {
-    fn new(env: Env, source: &'a mut dyn dh::ReadSeek) -> Self {
+    fn new(env: Env, source: &'a mut dyn Rs) -> Self {
         Self {
             source,
             index: None,
             blocks: None,
             keys: vec![],
+            compression_methods: vec![],
         }
     }
 
@@ -52,8 +54,22 @@ impl<'a> ArchiveFormat<'a> for ZipFormat<'a> {
             blocks.push(crate::formats::Block {
                 offset: file.data_start().unwrap(), // why is this even an option??
                 size: file.compressed_size(),
-                encryption_id: None,  // TODO
-                compression_id: None, // TODO
+                encryption_id: None, // TODO
+                compression_id: match file.compression() {
+                    CompressionMethod::Stored => None,
+                    CompressionMethod::Deflated => {
+                        self.compression_methods.push(super::CompressionMethod {
+                            algorithm: super::CompressionAlgorithm::Deflate,
+                            level: None,
+                        });
+                        Some(self.compression_methods.len() - 1)
+                    }
+                    _ => {
+                        self.compression_methods
+                            .push(super::CompressionMethod::unknown());
+                        Some(self.compression_methods.len() - 1)
+                    }
+                },
             });
             index.push(IndexItem {
                 path: PathBuf::from(file.name()),
@@ -89,7 +105,13 @@ impl<'a> ArchiveFormat<'a> for ZipFormat<'a> {
             block.size,
             target,
             None, // TODO
-            None, // TODO
+            if let Some(id) = block.compression_id {
+                self.compression_methods
+                    .get(id)
+                    .or(Some(super::CompressionMethod::unknown_ref()))
+            } else {
+                None
+            },
         )?;
 
         Ok(())
@@ -98,7 +120,7 @@ impl<'a> ArchiveFormat<'a> for ZipFormat<'a> {
     fn extract_file(
         &self,
         file: usize,
-        mut block: &mut dyn ReadSeek,
+        mut block: &mut dyn Rs,
         target: &mut dyn std::io::Write,
     ) -> Res<()> {
         let file = self
@@ -108,7 +130,7 @@ impl<'a> ArchiveFormat<'a> for ZipFormat<'a> {
             .get(file)
             .ok_or(Err::NotFoundInArchive(format!("#file-{:x}", file)))?;
 
-        block.copy_chunked_at(file.offset as usize, file.size as usize, target, 65536)?;
+        block.copy_at(file.offset, file.size, target)?;
         Ok(())
     }
 }

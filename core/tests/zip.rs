@@ -9,14 +9,17 @@ use nyvo_core::{
     env::Warning,
     formats::{ArchiveFormat, zip::ZipFormat},
 };
-use zip::{ZipWriter, write::SimpleFileOptions};
+use zip::{CompressionMethod, ZipWriter, write::SimpleFileOptions};
 
 #[test]
-fn test_zip_simple() {
+fn test_zip_read_simple() {
     let content = b"Hello, world!";
     let mut zip = ZipWriter::new(Cursor::new(vec![]));
-    zip.start_file("test.txt", SimpleFileOptions::default())
-        .unwrap();
+    zip.start_file(
+        "test.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )
+    .unwrap();
     zip.write_all(content).unwrap();
     let mut zip = zip.finish().unwrap();
 
@@ -44,15 +47,21 @@ fn test_zip_simple() {
 }
 
 #[test]
-fn test_zip_2files() {
+fn test_zip_read_2files() {
     let content = b"Hello, world!";
     let content2 = b"Hello, world! 2";
     let mut zip = ZipWriter::new(Cursor::new(vec![]));
-    zip.start_file("test.txt", SimpleFileOptions::default())
-        .unwrap();
+    zip.start_file(
+        "test.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )
+    .unwrap();
     zip.write_all(content).unwrap();
-    zip.start_file("test2.txt", SimpleFileOptions::default())
-        .unwrap();
+    zip.start_file(
+        "test2.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+    )
+    .unwrap();
     zip.write_all(content2).unwrap();
     let mut zip = zip.finish().unwrap();
 
@@ -90,4 +99,41 @@ fn test_zip_2files() {
 
     assert_eq!(content, file.as_slice());
     assert_eq!(content2, file2.as_slice());
+}
+
+#[cfg(feature = "deflate")]
+#[test]
+fn test_zip_read_deflate() {
+    let content = b"Hello, world!";
+    let mut zip = ZipWriter::new(Cursor::new(vec![]));
+    zip.start_file(
+        "test.txt",
+        SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
+    )
+    .unwrap();
+    zip.write_all(content).unwrap();
+    let mut zip = zip.finish().unwrap();
+
+    let env = Rc::new(nyvo_core::env::Environment::new(Box::new(|_: Warning| {})).unwrap());
+
+    let mut z = ZipFormat::new(env, &mut zip);
+    z.index_blocks().unwrap();
+    let index = z.index().unwrap();
+
+    let file_id = index
+        .iter()
+        .position(|i| i.path.to_str().unwrap() == "test.txt")
+        .unwrap();
+    assert_eq!(file_id, 0);
+    let block_id = index[file_id].block;
+    assert_eq!(block_id, 0);
+
+    let mut block = Cursor::new(Vec::new());
+    z.extract_block(block_id, &mut block).unwrap();
+    dbg!(&block);
+
+    let mut file = Cursor::new(Vec::new());
+    z.extract_file(file_id, &mut block, &mut file).unwrap();
+
+    assert_eq!(content, file.into_inner().as_slice());
 }

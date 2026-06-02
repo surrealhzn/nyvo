@@ -1,7 +1,5 @@
-use dh::ReadSeek;
-
 use crate::{
-    Res,
+    Res, Rs,
     env::Env,
     formats::{Blocks, Index},
 };
@@ -14,7 +12,7 @@ pub use super::{
 pub struct UnknownFormat {}
 
 impl ArchiveFormat<'_> for UnknownFormat {
-    fn new(env: Env, source: &mut dyn dh::ReadSeek) -> Self {
+    fn new(env: Env, source: &mut dyn Rs) -> Self {
         todo!()
     }
 
@@ -38,7 +36,7 @@ impl ArchiveFormat<'_> for UnknownFormat {
     fn extract_file(
         &self,
         file: usize,
-        block: &mut dyn ReadSeek,
+        block: &mut dyn Rs,
         target: &mut dyn std::io::Write,
     ) -> Res<()> {
         todo!();

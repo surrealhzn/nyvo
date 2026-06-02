@@ -7,14 +7,24 @@ edition = "2024"
 default = []
 zip = ["dep:zip", "dep:nt-time"]
 nyvo = []
-
+deflate = ["dep:flate2"]
 
 [dependencies]
 chrono = "0.4.44"
-dh = "0.10.0"
+dh = "0.11.0"
 nt-time = { version = "0.15.0", features = ["chrono"], optional = true }
 thiserror = "2.0.18"
-zip = { version = "8.5.1", default-features = false, features = [
+zip = { version = "8.6.0", default-features = false, features = [
   "chrono",
   "nt-time",
 ], optional = true }
+flate2 = { version = "1.0.17", features = [
+  "zlib-rs",
+], default-features = false, optional = true }
+
+[dev-dependencies]
+zip = { version = "8.6.0", default-features = false, features = [
+  "chrono",
+  "nt-time",
+  "deflate",
+] }
