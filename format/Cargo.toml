@@ -5,4 +5,6 @@ edition = "2024"
 
 [dependencies]
 aes-gcm-siv = { version = "0.11.1", features = ["std"] }
-dh = { version = "0.10.0", features = ["vli"] }
+argon2 = "0.5.3"
+dh = { version = "0.11.1", features = ["vli"] }
+rand = "0.10.2"
