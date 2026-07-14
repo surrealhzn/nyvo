@@ -1,8 +1,11 @@
-# Nyvo archive format
+# Nyvo archive format specification
 
 Important links:
 
-- [Reference implementation](https://github.com/surrealhzn/nyvo/tree/main/format) (Rust)
+- [Reference implementation](..) (Rust)
+- [Source code of this page](https://github.com/surrealhzn/nyvo/blob/main/format/spec/spec.md)
+- [Nyvo format website](https://nyvo.rocks/)
+- [Nyvo archiver website](https://surrealhorizon.com/nyvo)
 
 ## 0. About this specification
 
