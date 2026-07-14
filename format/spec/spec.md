@@ -2,7 +2,7 @@
 
 Important links:
 
-- [Reference implementation](..) (Rust)
+- [Reference implementation](https://github.com/surrealhzn/nyvo/tree/main/format) (Rust)
 - [Source code of this page](https://github.com/surrealhzn/nyvo/blob/main/format/spec/spec.md)
 - [Nyvo format website](https://nyvo.rocks/)
 - [Nyvo archiver website](https://surrealhorizon.com/nyvo)

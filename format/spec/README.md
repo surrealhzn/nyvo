@@ -2,7 +2,7 @@
 
 **Pages:**
 
-- [Specification](./spec.md)
+- [Specification](./spec)
 
 More pages will be added in the future.
 
@@ -15,4 +15,4 @@ The official website of the Surreal Nyvo archiver project is on Surreal's websit
 
 ---
 
-All pages on this website are licensed under [MIT License](../../LICENSE).
+All pages on this website are licensed under [MIT License](https://github.com/surrealhzn/nyvo/blob/main/LICENSE).
