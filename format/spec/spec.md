@@ -59,6 +59,14 @@ As this encoding is widely used, it is considered _trivial_ and will not be docu
 | Encryption methods |                          |
 | Store methods      |                          |
 
+After these headers, one of the three headers may follow:
+
+- Content information, followed by Index or Content
+- Index, followed by Content information or EOF
+- Content, followed by Content information or EOF
+
+Parsing should end if EOF is reached. This allows append operations.
+
 ### 2.1. Magic value
 
 Always the first 8 bytes of the archive.
@@ -122,4 +130,60 @@ The DEK will always be encrypted with AES-256-GCM-SIV, no matter what the "Encry
 - If decryption fails, the passphrase might be invalid, try again with another DEK cipher.
 - If every decryption attempt fails, the passphrase is invalid for this encryption method.
 
-// TODO: continue
+### 2.4. Store methods
+
+This is an array of store methods with the length stored in the [archive metadata header](#22-archive-metadata).
+
+An entry of this header is structured in this format:
+
+| Type  | Name                  | Content                                                                              | Notes                                                                 |
+| ----- | --------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `vu8` | Encryption method     | ID of the encryption method to use + 1                                               | `0` for no encryption, `1` for encryption using the first method, ... |
+| `vu8` | Compression algorithm | [Compression algorithm](#241-compression-algorithm-ids) used for content compression | `0` for no compression                                                |
+
+#### 2.4.1. Compression algorithm IDs
+
+| ID  | Name                                          |
+| --- | --------------------------------------------- |
+| `0` | None (don't compress)                         |
+| `1` | [Zstandard](https://github.com/facebook/zstd) |
+
+More will be added in the future.
+
+### 2.5. Content information header
+
+| Type                                                  | Name            | Content                                           | Notes                                       |
+| ----------------------------------------------------- | --------------- | ------------------------------------------------- | ------------------------------------------- |
+| `bool`                                                | Is index        | `true` if the following content is an index       | Highest bit of byte 0                       |
+| [Store option reference](#251-store-option-reference) | Store option    | ID of the store option used for following content | Lower 7 bits of byte 0                      |
+| optional `vu8`                                        | Store option ID | Custom store option ID                            | Only present if Store option = Custom (`1`) |
+| `vu8`                                                 | Length          | Length of the following content in bytes          |                                             |
+| `u8[16]`                                              | Checksum        | BLAKE3-256 Checksum of the next Length bytes      |                                             |
+
+#### 2.5.1. Store option reference
+
+7-bit enum
+
+| Value | Name      | Notes                                                                                        |
+| ----- | --------- | -------------------------------------------------------------------------------------------- |
+| `0`   | Default   | Store option 0 if defined, else format default                                               |
+| `1`   | Custom    | References a custom store option ID in a `vu8`                                               |
+| `2`   | Copy      | Reuses the store option the content before used. If not used before, Default (`0`).          |
+| `3`   | Increment | Increments the store option the content before used by 1. If not used before, Default (`0`). |
+| `4`   | Decrement | Decrements the store option the content before used by 1. If not used before, Default (`0`). |
+
+### 2.6. Index header
+
+This header can be compressed and encrypted according to its corresponding store option.
+
+// TODO: add index header spec
+
+### 2.7. Content header
+
+This header can be compressed and encrypted according to its corresponding store option.
+
+| Type   | Name    | Content           | Notes |
+| ------ | ------- | ----------------- | ----- |
+| `u8[]` | Content | raw file contents |       |
+
+// TODO: complete this spec
