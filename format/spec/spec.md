@@ -43,7 +43,7 @@ is referred to as `vu8`. The theoretical limit of this encoding is infinite, but
 cannot handle more bits than the target architecture supports (e.g. 64 bits for amd64/x86_64 or other 64-bit
 architectures, 32 bits for i386/x86_32 and so on) due to internal memory adressing by the Rust programming language.
 
-> [!WARN]  
+> [!CAUTION]  
 > Archives with variable integers larger than platform word size may cause unexpected errors.
 
 As this encoding is widely used, it is considered _trivial_ and will not be documented here.
@@ -92,7 +92,7 @@ An entry of this header is structured in this format:
 | `vu8`                             | KEK count                  | Key encryption key count                                                                 |       |
 | [Key](#232-key-data-structure)\[] | Keys                       | Key encryption keys                                                                      |       |
 
-> [!WARN]  
+> [!IMPORTANT]  
 > Key derivation fields may not exceed 32 bits.
 
 #### 2.3.1. Encryption algorithm IDs
