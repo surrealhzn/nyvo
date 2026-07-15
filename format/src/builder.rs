@@ -96,9 +96,9 @@ impl ArchiveBuilder {
 
         for method in self.encryption_methods {
             target.write_vu8(method.algorithm as _)?;
-            target.write_u32_le(method.kdf_memory)?;
-            target.write_u32_le(method.kdf_iterations)?;
-            target.write_u32_le(method.kdf_parallelism)?;
+            target.write_vu8(method.kdf_memory as _)?;
+            target.write_vu8(method.kdf_iterations as _)?;
+            target.write_vu8(method.kdf_parallelism as _)?;
             target.write_vu8(method.keys.len() as _)?;
 
             for key in method.keys {
@@ -113,8 +113,6 @@ impl ArchiveBuilder {
                 )?;
             }
         }
-
-        
 
         Ok(())
     }
