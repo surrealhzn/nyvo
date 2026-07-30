@@ -176,7 +176,12 @@ More will be added in the future.
 
 This header can be compressed and encrypted according to its corresponding store option.
 
-// TODO: add index header spec
+Because file directories are structured like trees, the index header is structured like a tree as well.
+This makes a little harder to parse than other archive formats, because an entry only contains parts of its path to save space.
+
+| Type   | Name | Content | Notes |
+| ------ | ---- | ------- | ----- |
+| `bool` |
 
 ### 2.7. Content header
 
