@@ -33,10 +33,33 @@ pub enum EncryptionAlgorithm {
     Aes256GcmSiv = 0,
 }
 
+impl TryFrom<u8> for EncryptionAlgorithm {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(EncryptionAlgorithm::Aes256GcmSiv),
+            _ => Err("Invalid encryption algorithm"),
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub enum CompressionAlgorithm {
     None = 0,
     Zstd = 1,
+}
+
+impl TryFrom<u8> for CompressionAlgorithm {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(CompressionAlgorithm::None),
+            1 => Ok(CompressionAlgorithm::Zstd),
+            _ => Err("Invalid compression algorithm"),
+        }
+    }
 }
 
 #[derive(Clone)]
