@@ -17,11 +17,11 @@ fn encode_ref(before: usize, current: usize, bits: u8) -> (u8, Option<usize>) {
     if current == before {
         return (1 << (bits - 1), None);
     }
-    if current > before && ((current - before) < 64) {
+    if current > before && ((current - before) < (1 << (bits - 1))) {
         let diff = (current - before) as u8;
         return (diff | (1 << (bits - 1)), None);
     }
-    if current < before && ((before - current) < 64) {
+    if current < before && ((before - current) < ((1 << (bits - 1)) - 1)) {
         let diff = (before - current) as u8;
         return (diff, None);
     }
