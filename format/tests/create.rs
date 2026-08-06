@@ -71,6 +71,14 @@ fn test_create_simple_1f() {
     assert_eq!(archive.content[1].store_method, 0);
     let archive = IndexedArchive::try_from(archive).unwrap();
     assert_eq!(archive.index.len(), 1);
+    assert_eq!(
+        archive.index.get("test.txt").unwrap(),
+        &IndexEntry {
+            block: 0,
+            offset: 0,
+            len: 13,
+        }
+    );
 }
 
 #[test]
@@ -108,6 +116,14 @@ fn test_create_encrypted_1f() {
     assert_eq!(archive.content[1].store_method, 0);
     let archive = IndexedArchive::try_from(archive).unwrap();
     assert_eq!(archive.index.len(), 1);
+    assert_eq!(
+        archive.index.get("test.txt").unwrap(),
+        &IndexEntry {
+            block: 0,
+            offset: 0,
+            len: 13,
+        }
+    );
 }
 
 #[test]
@@ -143,6 +159,14 @@ fn test_create_compressed_1f() {
     assert_eq!(archive.content[1].store_method, 0);
     let archive = IndexedArchive::try_from(archive).unwrap();
     assert_eq!(archive.index.len(), 1);
+    assert_eq!(
+        archive.index.get("test.txt").unwrap(),
+        &IndexEntry {
+            block: 0,
+            offset: 0,
+            len: 13,
+        }
+    );
 }
 
 #[test]
@@ -180,4 +204,12 @@ fn test_create_encrypted_compressed_1f() {
     assert_eq!(archive.content[1].store_method, 0);
     let archive = IndexedArchive::try_from(archive).unwrap();
     assert_eq!(archive.index.len(), 1);
+    assert_eq!(
+        archive.index.get("test.txt").unwrap(),
+        &IndexEntry {
+            block: 0,
+            offset: 0,
+            len: 13,
+        }
+    );
 }

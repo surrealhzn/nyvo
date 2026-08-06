@@ -5,7 +5,7 @@ use dh::{ReadVal, helpers::Rs};
 use std::{
     collections::HashMap,
     error::Error,
-    io::{Read, SeekFrom},
+    io::{Cursor, Read, SeekFrom},
 };
 
 fn decode_ref(before: usize, value: u8, bits: u8) -> Option<usize> {
@@ -230,7 +230,14 @@ pub struct IndexedArchive<'a> {
     pub encryption_methods: Vec<EncryptionMethod>,
     pub store_methods: Vec<StoreMethod>,
     pub blocks: Vec<(usize, usize, usize)>, // (offset, length, store_method)
-    pub index: HashMap<String, (usize, usize, usize)>, // path, (block, offset, length)
+    pub index: HashMap<String, IndexEntry>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct IndexEntry {
+    pub block: usize,
+    pub offset: usize,
+    pub len: usize,
 }
 
 impl<'a> TryFrom<LoadedArchive<'a>> for IndexedArchive<'a> {
@@ -244,32 +251,47 @@ impl<'a> TryFrom<LoadedArchive<'a>> for IndexedArchive<'a> {
 
         for idx in loaded.content.iter().filter(|c| c.is_index) {
             let store_method = store_methods.get(idx.store_method).unwrap(); // checked during load_archive
+            reader.seek(SeekFrom::Start(idx.offset))?;
+            let mut reader: Box<dyn Read> = Box::new(reader.take(idx.len));
 
             if store_method.encryption != 0 {
                 let encryption_id = store_method.encryption - 1; // valid, checked during load_archive
-                if loaded.unlocked_deks.get(encryption_id).unwrap().is_none() {
-                    // Key not provided, skip this index
+                let dek = if let Some(dek) = loaded.unlocked_deks.get(encryption_id).unwrap() {
+                    dek
+                } else {
                     continue;
+                };
+
+                match encryption_methods.get(encryption_id).unwrap().algorithm {
+                    EncryptionAlgorithm::Aes256GcmSiv => {
+                        let nonce = reader.read_u8_array()?;
+                        let cipher = Aes256GcmSiv::new(dek.into());
+                        let encrypted = reader.read_vec(idx.len as usize - 12)?;
+                        let decrypted = cipher.decrypt(&nonce.into(), encrypted.as_ref())?;
+                        reader = Box::new(Cursor::new(decrypted));
+                    }
                 }
-                todo!("decrypt index");
             }
 
-            if store_method.compression != CompressionAlgorithm::None {
-                todo!("decompress index");
+            match store_method.compression {
+                CompressionAlgorithm::None => {}
+                CompressionAlgorithm::Zstd => {
+                    reader = Box::new(zstd::Decoder::new(reader)?);
+                }
             }
 
-            let mut pos = idx.offset;
-            let end = pos + idx.len;
-            reader.seek(SeekFrom::Start(pos))?;
-            while pos < end {
-                let path_len = reader.read_vu8()? as usize;
-                let path = reader.read_str(path_len)?;
-                let block = reader.read_vu8()? as usize;
-                let offset = reader.read_vu8()? as usize;
-                let len = reader.read_vu8()? as usize;
-                index.insert(path, (block, offset, len));
+            loop {
+                let path_len = match reader.read_vu8() {
+                    Ok(len) => len,
+                    Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                    Err(e) => return Err(e.into()),
+                };
 
-                pos = reader.stream_position()?;
+                let path = reader.read_str(path_len as _)?;
+                let block = reader.read_vu8()? as _;
+                let offset = reader.read_vu8()? as _;
+                let len = reader.read_vu8()? as _;
+                index.insert(path, IndexEntry { block, offset, len });
             }
         }
 
