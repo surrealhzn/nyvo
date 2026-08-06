@@ -45,7 +45,7 @@ impl TryFrom<u8> for EncryptionAlgorithm {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum CompressionAlgorithm {
     None = 0,
     Zstd = 1,
@@ -107,12 +107,11 @@ impl ContentBuilder<'_> {
         self,
         target: &mut dyn Write,
         options: (&StoreBuilder, Option<&EncryptionBuilder>),
-        block_before: &mut usize,
     ) -> Result<(), Box<dyn Error>> {
         let mut content = Cursor::new(vec![]);
 
         match self {
-            ContentBuilder::Index(index) => index.build(&mut content, block_before)?,
+            ContentBuilder::Index(index) => index.build(&mut content)?,
             ContentBuilder::Content(cbb) => {
                 for (mut cont, _) in cbb.content {
                     std::io::copy(&mut cont, &mut content)?;
@@ -123,7 +122,7 @@ impl ContentBuilder<'_> {
         // TODO: optimize this
         let mut content2: Cursor<Vec<u8>> = Cursor::new(vec![]);
 
-        content.seek(SeekFrom::Start(0))?;
+        content.rewind()?;
         match options.0.compression_method {
             CompressionAlgorithm::Zstd => {
                 let mut encoder =
@@ -136,7 +135,7 @@ impl ContentBuilder<'_> {
             }
         }
 
-        content2.seek(SeekFrom::Start(0))?;
+        content2.rewind()?;
         match options.1 {
             Some(enc) => match enc.algorithm {
                 EncryptionAlgorithm::Aes256GcmSiv => {
@@ -174,7 +173,6 @@ impl ContentInfoBuilder<'_> {
         target: &mut dyn Write,
         store_method: &mut usize,
         options: (&StoreBuilder, Option<&EncryptionBuilder>),
-        block_before: &mut usize,
     ) -> Result<(), Box<dyn Error>> {
         let is_index = match self.content {
             ContentBuilder::Index(_) => 1 << 7,
@@ -188,12 +186,12 @@ impl ContentInfoBuilder<'_> {
         }
 
         let mut content = Cursor::new(vec![]);
-        self.content.build(&mut content, options, block_before)?;
+        self.content.build(&mut content, options)?;
 
         let len = content.seek(SeekFrom::End(0))?;
         target.write_vu8(len as _)?;
         let mut hasher = blake3::Hasher::new();
-        content.seek(SeekFrom::Start(0))?;
+        content.rewind()?;
         hasher.update_reader(&mut content)?;
         let mut hasher = hasher.finalize_xof();
 
@@ -219,20 +217,11 @@ impl ContentInfoBuilder<'_> {
 pub struct IndexBuilder(Vec<IndexEntryBuilder>);
 
 impl IndexBuilder {
-    pub fn build(
-        self,
-        target: &mut dyn Write,
-        block_before: &mut usize,
-    ) -> Result<(), Box<dyn Error>> {
+    pub fn build(self, target: &mut dyn Write) -> Result<(), Box<dyn Error>> {
         for entry in self.0 {
             target.write_vu8(entry.path.len() as _)?;
             target.write_str(entry.path)?;
-            let block_ref = encode_ref(*block_before, entry.block.0 as _, 8);
-            target.write_u8(block_ref.0)?;
-            if let Some(block) = block_ref.1 {
-                target.write_vu8(block as _)?;
-            }
-            *block_before = entry.block.0;
+            target.write_vu8(entry.block.0 as _)?;
             target.write_vu8(entry.offset as _)?;
             target.write_vu8(entry.length as _)?;
         }
@@ -423,7 +412,6 @@ impl<'a> ArchiveBuilder<'a> {
         }
 
         let mut store_method = 0;
-        let mut block_before = 0;
         for content in self.content {
             let store_option = if self.store_methods.is_empty() && content.store_method.0 == 0 {
                 &StoreBuilder::default()
@@ -442,7 +430,7 @@ impl<'a> ArchiveBuilder<'a> {
                 })
                 .transpose()?;
             let options = (store_option, encryption_option);
-            content.build(target, &mut store_method, options, &mut block_before)?;
+            content.build(target, &mut store_method, options)?;
         }
 
         Ok(())
