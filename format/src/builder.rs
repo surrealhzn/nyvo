@@ -1,10 +1,11 @@
 use crate::MAGIC;
 use aes_gcm_siv::{
-    Aes256GcmSiv, KeyInit, Nonce,
-    aead::{Aead, OsRng, rand_core::RngCore},
+    Aes256GcmSiv, Key, KeyInit,
+    aead::{Aead, Generate},
 };
 use argon2::{Algorithm::Argon2id, Argon2, Version::V0x13};
 use dh::{ReadVal, ReadValAt, WriteVal};
+use rand::{Rng, rngs::ThreadRng};
 use std::{
     error::Error,
     io::{Cursor, Read, Seek, SeekFrom, Write},
@@ -81,7 +82,7 @@ pub struct KdfBuilder {
 
 #[derive(Copy, Clone)]
 pub struct StoreBuilder {
-    encryption_method: usize,
+    encryption_method: EncryptionMethodRef,
     compression_method: CompressionAlgorithm,
     compression_level: u8,
 }
@@ -89,7 +90,7 @@ pub struct StoreBuilder {
 impl Default for StoreBuilder {
     fn default() -> Self {
         Self {
-            encryption_method: 0,
+            encryption_method: EncryptionMethodRef(None),
             compression_method: CompressionAlgorithm::None,
             compression_level: 0,
         }
@@ -102,9 +103,9 @@ pub enum ContentBuilder<'a> {
 }
 
 impl ContentBuilder<'_> {
-    pub fn build<T: Write + Seek>(
+    pub fn build(
         self,
-        mut target: T,
+        target: &mut dyn Write,
         options: (&StoreBuilder, Option<&EncryptionBuilder>),
         block_before: &mut usize,
     ) -> Result<(), Box<dyn Error>> {
@@ -120,7 +121,7 @@ impl ContentBuilder<'_> {
         }
 
         let len = content.seek(SeekFrom::End(0))?;
-        content.copy_at(0, len, &mut target)?;
+        content.copy_at(0, len, target)?;
         Ok(())
     }
 }
@@ -131,14 +132,14 @@ pub struct ContentBlockBuilder<'a> {
 }
 
 pub struct ContentInfoBuilder<'a> {
-    store_method: usize,
+    store_method: &'a StoreMethodRef,
     content: ContentBuilder<'a>,
 }
 
 impl ContentInfoBuilder<'_> {
-    pub fn build<T: Write + Seek>(
+    pub fn build(
         self,
-        mut target: T,
+        target: &mut dyn Write,
         store_method: &mut usize,
         options: (&StoreBuilder, Option<&EncryptionBuilder>),
         block_before: &mut usize,
@@ -147,8 +148,8 @@ impl ContentInfoBuilder<'_> {
             ContentBuilder::Index(_) => 1 << 7,
             ContentBuilder::Content(_) => 0,
         };
-        let store_option_ref = encode_ref(*store_method, self.store_method, 7);
-        *store_method = self.store_method;
+        let store_option_ref = encode_ref(*store_method, self.store_method.0, 7);
+        *store_method = self.store_method.0;
         target.write_u8(store_option_ref.0 | is_index)?;
         if let Some(store_method) = store_option_ref.1 {
             target.write_vu8(store_method as _)?;
@@ -174,10 +175,10 @@ impl ContentInfoBuilder<'_> {
             } else {
                 32 // > 16 MiB: 256 bit chksum
             },
-            &mut target,
+            target,
         )?;
 
-        content.copy_at(0, len, &mut target)?;
+        content.copy_at(0, len, target)?;
 
         Ok(())
     }
@@ -186,20 +187,20 @@ impl ContentInfoBuilder<'_> {
 pub struct IndexBuilder(Vec<IndexEntryBuilder>);
 
 impl IndexBuilder {
-    pub fn build<T: Write + Seek>(
+    pub fn build(
         self,
-        mut target: T,
+        target: &mut dyn Write,
         block_before: &mut usize,
     ) -> Result<(), Box<dyn Error>> {
         for entry in self.0 {
             target.write_vu8(entry.path.len() as _)?;
             target.write_str(entry.path)?;
-            let block_ref = encode_ref(*block_before, entry.block as _, 8);
+            let block_ref = encode_ref(*block_before, entry.block.0 as _, 8);
             target.write_u8(block_ref.0)?;
             if let Some(block) = block_ref.1 {
                 target.write_vu8(block as _)?;
             }
-            *block_before = entry.block;
+            *block_before = entry.block.0;
             target.write_vu8(entry.offset as _)?;
             target.write_vu8(entry.length as _)?;
         }
@@ -209,7 +210,7 @@ impl IndexBuilder {
 
 pub struct IndexEntryBuilder {
     path: String,
-    block: usize,
+    block: ContentRef,
     offset: usize,
     length: usize,
 }
@@ -220,6 +221,28 @@ pub struct ArchiveBuilder<'a> {
     store_methods: Vec<StoreBuilder>,
     content: Vec<ContentInfoBuilder<'a>>,
     block_refs: Vec<usize>,
+}
+
+pub struct IndexRef(usize);
+pub struct ContentRef(usize);
+pub struct InnerContentRef(ContentRef, usize, usize);
+
+pub struct StoreMethodRef(usize);
+
+const STORE_METHOD_REF_DEFAULT: StoreMethodRef = StoreMethodRef(0);
+impl Default for &StoreMethodRef {
+    fn default() -> Self {
+        &STORE_METHOD_REF_DEFAULT
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct EncryptionMethodRef(Option<usize>);
+
+impl From<EncryptionMethodRef> for u128 {
+    fn from(value: EncryptionMethodRef) -> Self {
+        value.0.map(|v| v as u128 + 1).unwrap_or(0)
+    }
 }
 
 impl<'a> ArchiveBuilder<'a> {
@@ -233,7 +256,7 @@ impl<'a> ArchiveBuilder<'a> {
         }
     }
 
-    pub fn encrypt(&mut self, key: &[u8]) -> usize {
+    pub fn encrypt(&mut self, key: &[u8]) -> EncryptionMethodRef {
         let kdf_memory = 1 << 16;
         let kdf_iterations = 3;
         let kdf_parallelism = 1;
@@ -244,48 +267,49 @@ impl<'a> ArchiveBuilder<'a> {
             argon2::Params::new(kdf_memory, kdf_iterations, kdf_parallelism, None).unwrap(),
         );
 
-        let salt: [u8; 32] = Aes256GcmSiv::generate_key(&mut OsRng).into();
+        let mut rng = ThreadRng::default();
+        let salt: [u8; 32] = Key::<Aes256GcmSiv>::generate_from_rng(&mut rng).into();
         let mut kek = [0; 32];
         hasher.hash_password_into(key, &salt, &mut kek).unwrap();
 
         let mut nonce = [0; 12];
-        OsRng.fill_bytes(&mut nonce);
+        rng.fill_bytes(&mut nonce);
 
         self.encryption_methods.push(EncryptionBuilder {
             algorithm: EncryptionAlgorithm::Aes256GcmSiv,
             keys: vec![KdfBuilder { nonce, key: kek }],
-            dek: Aes256GcmSiv::generate_key(&mut OsRng).into(),
+            dek: Key::<Aes256GcmSiv>::generate_from_rng(&mut rng).into(),
             kdf_memory,
             kdf_iterations,
             kdf_parallelism,
             kdf_salt: salt,
         });
-        self.encryption_methods.len()
+        EncryptionMethodRef(Some(self.encryption_methods.len() - 1))
     }
 
     pub fn add_store_method(
         &mut self,
-        encryption_method: usize,
+        encryption_method: EncryptionMethodRef,
         compression_method: CompressionAlgorithm,
         compression_level: u8,
-    ) -> usize {
+    ) -> StoreMethodRef {
         self.store_methods.push(StoreBuilder {
             encryption_method,
             compression_method,
             compression_level,
         });
-        self.store_methods.len() - 1
+        StoreMethodRef(self.store_methods.len() - 1)
     }
 
-    pub fn add_index(&mut self, store_method: usize) -> usize {
+    pub fn add_index(&mut self, store_method: &'a StoreMethodRef) -> IndexRef {
         self.content.push(ContentInfoBuilder {
             store_method,
             content: ContentBuilder::Index(IndexBuilder(vec![])),
         });
-        self.content.len() - 1
+        IndexRef(self.content.len() - 1)
     }
 
-    pub fn add_content_block(&mut self, store_method: usize) -> usize {
+    pub fn add_content_block(&mut self, store_method: &'a StoreMethodRef) -> ContentRef {
         let block = self.block_refs.len();
         self.block_refs.push(self.content.len());
         self.content.push(ContentInfoBuilder {
@@ -295,34 +319,34 @@ impl<'a> ArchiveBuilder<'a> {
                 length: 0,
             }),
         });
-        block
+        ContentRef(block)
     }
 
     pub fn add_content(
         &mut self,
-        block: usize,
+        block: ContentRef,
         source: &'a mut dyn Read,
         length: usize,
-    ) -> (usize, usize, usize) {
+    ) -> InnerContentRef {
         if let Some(ContentInfoBuilder {
             content: ContentBuilder::Content(cbb),
             ..
-        }) = self.content.get_mut(self.block_refs[block])
+        }) = self.content.get_mut(self.block_refs[block.0])
         {
             cbb.content.push((source, length));
             let offset = cbb.length;
             cbb.length += length;
-            (block, offset, length)
+            InnerContentRef(block, offset, length)
         } else {
-            todo!("Invalid content block");
+            todo!(); // ContentRef always points to a content block, not an index UNLESS the user pushes a foreign ContentRef, which unfortunately cannot be prevented
         }
     }
 
-    pub fn index(&mut self, block: usize, path: String, content: (usize, usize, usize)) {
+    pub fn index(&mut self, block: IndexRef, path: String, content: InnerContentRef) {
         if let Some(ContentInfoBuilder {
             content: ContentBuilder::Index(index),
             ..
-        }) = self.content.get_mut(block)
+        }) = self.content.get_mut(block.0)
         {
             index.0.push(IndexEntryBuilder {
                 path,
@@ -331,11 +355,11 @@ impl<'a> ArchiveBuilder<'a> {
                 length: content.2,
             });
         } else {
-            todo!("Invalid index block");
+            todo!(); // IndexRef always points to an index, not a content block UNLESS the user pushes a foreign IndexRef, which unfortunately cannot be prevented
         }
     }
 
-    pub fn build<T: Write + Seek>(self, mut target: T) -> Result<(), Box<dyn Error>> {
+    pub fn build(self, target: &mut dyn Write) -> Result<(), Box<dyn Error>> {
         target.write_u8_array(MAGIC)?;
         target.write_vu8((self.version - 1) as _)?;
         target.write_vu8(self.encryption_methods.len() as _)?;
@@ -354,7 +378,7 @@ impl<'a> ArchiveBuilder<'a> {
 
                 target.write_u8_array::<48>(
                     Aes256GcmSiv::new(&key.key.into())
-                        .encrypt(Nonce::from_slice(&key.nonce), method.dek.as_ref())?
+                        .encrypt(&key.nonce.into(), method.dek.as_ref())?
                         .try_into()
                         .unwrap(),
                 )?;
@@ -362,31 +386,31 @@ impl<'a> ArchiveBuilder<'a> {
         }
 
         for method in self.store_methods.clone() {
-            target.write_vu8(method.encryption_method as _)?;
+            target.write_vu8(method.encryption_method.into())?;
             target.write_vu8(method.compression_method as _)?;
         }
 
         let mut store_method = 0;
         let mut block_before = 0;
         for content in self.content {
-            let store_option = if self.store_methods.is_empty() && content.store_method == 0 {
+            let store_option = if self.store_methods.is_empty() && content.store_method.0 == 0 {
                 &StoreBuilder::default()
             } else {
                 self.store_methods
-                    .get(content.store_method)
+                    .get(content.store_method.0)
                     .ok_or("Invalid store method")?
             };
-            let encryption_option = if store_option.encryption_method == 0 {
-                None
-            } else {
-                Some(
+            let encryption_option = store_option
+                .encryption_method
+                .0
+                .map(|idx| {
                     self.encryption_methods
-                        .get(store_option.encryption_method - 1)
-                        .ok_or("Invalid encryption method")?,
-                )
-            };
+                        .get(idx)
+                        .ok_or("Invalid encryption method")
+                })
+                .transpose()?;
             let options = (store_option, encryption_option);
-            content.build(&mut target, &mut store_method, options, &mut block_before)?;
+            content.build(target, &mut store_method, options, &mut block_before)?;
         }
 
         Ok(())
