@@ -1,9 +1,6 @@
 use crate::{CompressionAlgorithm, EncryptionAlgorithm, MAGIC};
-use dh::ReadVal;
-use std::{
-    error::Error,
-    io::{Read, Seek},
-};
+use dh::{ReadVal, helpers::Rs};
+use std::error::Error;
 
 struct EncryptionMethod {
     algorithm: EncryptionAlgorithm,
@@ -33,7 +30,7 @@ impl Default for StoreMethod {
     }
 }
 
-pub fn load_archive<T: Read + Seek>(mut source: T) -> Result<(), Box<dyn Error>> {
+pub fn load_archive(source: &mut dyn Rs) -> Result<(), Box<dyn Error>> {
     if source.read_u8_array()? != MAGIC {
         return Err("magic mismatch".into());
     };

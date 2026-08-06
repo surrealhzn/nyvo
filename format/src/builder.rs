@@ -120,8 +120,40 @@ impl ContentBuilder<'_> {
             }
         }
 
-        let len = content.seek(SeekFrom::End(0))?;
-        content.copy_at(0, len, target)?;
+        // TODO: optimize this
+        let mut content2: Cursor<Vec<u8>> = Cursor::new(vec![]);
+
+        content.seek(SeekFrom::Start(0))?;
+        match options.0.compression_method {
+            CompressionAlgorithm::Zstd => {
+                let mut encoder =
+                    zstd::Encoder::new(&mut content2, options.0.compression_level as i32)?;
+                std::io::copy(&mut content, &mut encoder)?;
+                encoder.finish()?;
+            }
+            CompressionAlgorithm::None => {
+                std::io::copy(&mut content, &mut content2)?;
+            }
+        }
+
+        content2.seek(SeekFrom::Start(0))?;
+        match options.1 {
+            Some(enc) => match enc.algorithm {
+                EncryptionAlgorithm::Aes256GcmSiv => {
+                    let cipher = Aes256GcmSiv::new(&enc.dek.into());
+                    let mut nonce = [0; 12];
+                    let mut rng = ThreadRng::default();
+                    rng.fill_bytes(&mut nonce);
+                    let encrypted = cipher.encrypt(&nonce.into(), content2.get_ref().as_slice())?;
+                    target.write_u8_array(nonce)?;
+                    target.write_vec(encrypted)?;
+                }
+            },
+            None => {
+                std::io::copy(&mut content2, target)?;
+            }
+        }
+
         Ok(())
     }
 }
@@ -236,7 +268,7 @@ impl Default for &StoreMethodRef {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct EncryptionMethodRef(Option<usize>);
 
 impl From<EncryptionMethodRef> for u128 {
