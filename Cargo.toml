@@ -1,7 +1,12 @@
 [package]
-name = "nyvo"
+name = "surreal-nyvo"
 version = "0.1.0-dev"
 edition = "2024"
+homepage = "https://surrealhorizon.com/nyvo"
+
+[workspace]
+resolver = "3"
+members = ["libs/nyvo-core", "libs/nyvo-format"]
 
 [features]
 gui = ["dep:gpui", "dep:gpui_platform", "dep:gpui-component"]
