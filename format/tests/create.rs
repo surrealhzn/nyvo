@@ -1,7 +1,9 @@
 use nyvo::*;
 use std::{
+    cell::RefCell,
     fs::OpenOptions,
-    io::{Cursor, Seek},
+    io::{Cursor, Seek, Write},
+    rc::Rc,
 };
 
 #[test]
@@ -69,7 +71,7 @@ fn test_create_simple_1f() {
     assert_eq!(archive.content[0].store_method, 0);
     assert!(!archive.content[1].is_index);
     assert_eq!(archive.content[1].store_method, 0);
-    let archive = IndexedArchive::try_from(archive).unwrap();
+    let mut archive = IndexedArchive::try_from(archive).unwrap();
     assert_eq!(archive.index.len(), 1);
     assert_eq!(
         archive.index.get("test.txt").unwrap(),
@@ -79,6 +81,23 @@ fn test_create_simple_1f() {
             len: 13,
         }
     );
+    let test_txt = Rc::new(RefCell::new(vec![]));
+    struct VecWriter(Rc<RefCell<Vec<u8>>>);
+
+    impl Write for VecWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.borrow_mut().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    archive
+        .extract(vec!["test.txt"], |_| Box::new(VecWriter(test_txt.clone())))
+        .unwrap();
+    let test_txt = test_txt.borrow();
+    assert_eq!(&test_txt[..], b"Hello, world!");
 }
 
 #[test]

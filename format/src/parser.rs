@@ -5,7 +5,7 @@ use dh::{ReadVal, helpers::Rs};
 use std::{
     collections::HashMap,
     error::Error,
-    io::{Cursor, Read, SeekFrom},
+    io::{Cursor, Read, SeekFrom, Write},
 };
 
 fn decode_ref(before: usize, value: u8, bits: u8) -> Option<usize> {
@@ -238,6 +238,18 @@ pub struct IndexEntry {
     pub block: usize,
     pub offset: usize,
     pub len: usize,
+}
+
+impl IndexedArchive<'_> {
+    pub fn extract<'a>(
+        &mut self,
+        paths: Vec<&str>,
+        writer: impl FnMut(&str) -> Box<dyn Write>,
+    ) -> Result<(), Box<dyn Error>> {
+        // TODO: optimize by sorting files by block
+        for path in paths {}
+        Ok(())
+    }
 }
 
 impl<'a> TryFrom<LoadedArchive<'a>> for IndexedArchive<'a> {
