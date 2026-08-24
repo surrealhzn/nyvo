@@ -6,7 +6,7 @@ homepage = "https://surrealhorizon.com/nyvo"
 
 [workspace]
 resolver = "3"
-members = ["libs/nyvo-core", "libs/nyvo-format"]
+members = ["libs/fakefs","libs/nyvo-core", "libs/nyvo-format"]
 
 [features]
 gui = ["dep:gpui", "dep:gpui_platform", "dep:gpui-component"]
