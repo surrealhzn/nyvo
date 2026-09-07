@@ -248,6 +248,7 @@ impl IndexedArchive<'_> {
         mut writer: impl FnMut(&str) -> Box<dyn Write>,
     ) -> Result<(), Box<dyn Error>> {
         // TODO: optimize by sorting files by block
+        // TODO: cache decoded blocks somewhere, decoding again hurts performance
         for path in paths {
             let entry = self.index.get(path).ok_or("enoent")?;
             let (block_offset, block_len, store_method) =

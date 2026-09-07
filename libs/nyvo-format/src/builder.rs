@@ -281,11 +281,24 @@ impl<'a> ArchiveBuilder<'a> {
         let kdf_memory = 1 << 16;
         let kdf_iterations = 3;
         let kdf_parallelism = 1;
+        let algorithm = EncryptionAlgorithm::Aes256GcmSiv;
 
+        self.encrypt_advanced(key, algorithm, kdf_memory, kdf_iterations, kdf_parallelism)
+            .unwrap() // these params are safe
+    }
+
+    pub fn encrypt_advanced(
+        &mut self,
+        key: &[u8],
+        algorithm: EncryptionAlgorithm,
+        kdf_memory: u32,
+        kdf_iterations: u32,
+        kdf_parallelism: u32,
+    ) -> Result<EncryptionMethodRef, argon2::Error> {
         let hasher = Argon2::new(
             Argon2id,
             V0x13,
-            argon2::Params::new(kdf_memory, kdf_iterations, kdf_parallelism, None).unwrap(),
+            argon2::Params::new(kdf_memory, kdf_iterations, kdf_parallelism, None)?,
         );
 
         let mut rng = ThreadRng::default();
@@ -297,7 +310,7 @@ impl<'a> ArchiveBuilder<'a> {
         rng.fill_bytes(&mut nonce);
 
         self.encryption_methods.push(EncryptionBuilder {
-            algorithm: EncryptionAlgorithm::Aes256GcmSiv,
+            algorithm,
             keys: vec![KdfBuilder { nonce, key: kek }],
             dek: Key::<Aes256GcmSiv>::generate_from_rng(&mut rng).into(),
             kdf_memory,
@@ -305,7 +318,7 @@ impl<'a> ArchiveBuilder<'a> {
             kdf_parallelism,
             kdf_salt: salt,
         });
-        EncryptionMethodRef(Some(self.encryption_methods.len() - 1))
+        Ok(EncryptionMethodRef(Some(self.encryption_methods.len() - 1)))
     }
 
     pub fn add_store_method(

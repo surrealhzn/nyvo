@@ -37,7 +37,9 @@ fn test_create_simple_empty() {
 fn test_create_encrypted_empty() {
     let mut buffer = Cursor::new(vec![]);
     let mut archive = ArchiveBuilder::new();
-    archive.encrypt(b"Password");
+    archive
+        .encrypt_advanced(b"Password", EncryptionAlgorithm::Aes256GcmSiv, 8, 1, 1)
+        .unwrap();
     archive.build(&mut buffer).unwrap();
 
     buffer.rewind().unwrap();
@@ -104,7 +106,9 @@ fn test_create_simple_1f() {
 fn test_create_encrypted_1f() {
     let mut buffer = Cursor::new(vec![]);
     let mut archive = ArchiveBuilder::new();
-    let encryption = archive.encrypt(b"Password");
+    let encryption = archive
+        .encrypt_advanced(b"Password", EncryptionAlgorithm::Aes256GcmSiv, 8, 1, 1)
+        .unwrap();
     let method = archive.add_store_method(encryption, CompressionAlgorithm::None, 0);
 
     let index = archive.add_index(&method);
@@ -204,7 +208,9 @@ fn test_create_compressed_1f() {
 fn test_create_encrypted_compressed_1f() {
     let mut buffer = Cursor::new(vec![]);
     let mut archive = ArchiveBuilder::new();
-    let encryption = archive.encrypt(b"Password");
+    let encryption = archive
+        .encrypt_advanced(b"Password", EncryptionAlgorithm::Aes256GcmSiv, 8, 1, 1)
+        .unwrap();
     let method = archive.add_store_method(encryption, CompressionAlgorithm::Zstd, 1);
 
     let index = archive.add_index(&method);
