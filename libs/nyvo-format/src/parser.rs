@@ -1,7 +1,7 @@
 use crate::{CompressionAlgorithm, EncryptionAlgorithm, MAGIC};
 use aes_gcm_siv::{Aes256GcmSiv, KeyInit, aead::Aead};
 use argon2::{Algorithm::Argon2id, Argon2, Version::V0x13};
-use dh::{ReadVal, helpers::Rs};
+use dh::{ReadVal, ReadValAt, helpers::Rs};
 use std::{
     collections::HashMap,
     error::Error,
@@ -231,6 +231,7 @@ pub struct IndexedArchive<'a> {
     pub store_methods: Vec<StoreMethod>,
     pub blocks: Vec<(usize, usize, usize)>, // (offset, length, store_method)
     pub index: HashMap<String, IndexEntry>,
+    unlocked_deks: Vec<Option<[u8; 32]>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -241,13 +242,58 @@ pub struct IndexEntry {
 }
 
 impl IndexedArchive<'_> {
-    pub fn extract<'a>(
+    pub fn extract(
         &mut self,
         paths: Vec<&str>,
-        writer: impl FnMut(&str) -> Box<dyn Write>,
+        mut writer: impl FnMut(&str) -> Box<dyn Write>,
     ) -> Result<(), Box<dyn Error>> {
         // TODO: optimize by sorting files by block
-        for path in paths {}
+        for path in paths {
+            let entry = self.index.get(path).ok_or("enoent")?;
+            let (block_offset, block_len, store_method) =
+                self.blocks.get(entry.block).ok_or("unknown block")?;
+            let store_method = self
+                .store_methods
+                .get(*store_method)
+                .ok_or("unknown store method")?;
+
+            self.reader.seek(SeekFrom::Start(*block_offset as _))?;
+            let mut reader: Box<dyn Rs> = Box::new(self.reader.take(*block_len as _));
+
+            if store_method.encryption != 0 {
+                let encryption_id = store_method.encryption - 1; // valid, checked during load_archive
+                let dek = if let Some(dek) = self.unlocked_deks.get(encryption_id).unwrap() {
+                    dek
+                } else {
+                    continue;
+                };
+
+                match self
+                    .encryption_methods
+                    .get(encryption_id)
+                    .unwrap()
+                    .algorithm
+                {
+                    EncryptionAlgorithm::Aes256GcmSiv => {
+                        let nonce = reader.read_u8_array()?;
+                        let cipher = Aes256GcmSiv::new(dek.into());
+                        let encrypted = reader.read_vec(*block_len - 12)?;
+                        let decrypted = cipher.decrypt(&nonce.into(), encrypted.as_ref())?;
+                        reader = Box::new(Cursor::new(decrypted));
+                    }
+                }
+            }
+
+            match store_method.compression {
+                CompressionAlgorithm::None => {}
+                CompressionAlgorithm::Zstd => {
+                    reader = Box::new(Cursor::new(zstd::decode_all(reader)?));
+                }
+            }
+
+            let mut writer = writer(path);
+            reader.copy_at(entry.offset as _, entry.len as _, writer.as_mut())?;
+        }
         Ok(())
     }
 }
@@ -320,6 +366,7 @@ impl<'a> TryFrom<LoadedArchive<'a>> for IndexedArchive<'a> {
             encryption_methods,
             store_methods,
             blocks,
+            unlocked_deks: loaded.unlocked_deks,
         })
     }
 }
